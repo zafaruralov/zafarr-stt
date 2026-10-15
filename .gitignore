@@ -1,0 +1,4 @@
+model-export/
+.venv/
+__pycache__/
+model/*.onnx

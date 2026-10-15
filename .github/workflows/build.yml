@@ -1,0 +1,54 @@
+name: Build image
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      # The model is too big for git, so it lives in a GitHub Release
+      - name: Download model
+        run: gh release download model-v1 -D model
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/zafaruralov/zafarr-stt:${{ github.sha }}
+            ghcr.io/zafaruralov/zafarr-stt:latest
+
+  # Write the new tag into zafarr-infra (both api and worker use the same image); ArgoCD deploys it.
+  bump-infra:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: zafaruralov/zafarr-infra
+          token: ${{ secrets.INFRA_TOKEN }}
+
+      - name: Update image tag
+        run: |
+          sed -i "s|ghcr.io/zafaruralov/zafarr-stt:.*|ghcr.io/zafaruralov/zafarr-stt:${{ github.sha }}|" apps/stt/api.yaml apps/stt/worker.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "stt: deploy ${GITHUB_SHA::7}"
+          git pull --rebase
+          git push

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Uzbek STT</title>
+<style>
+  :root { --bg: #fafafa; --fg: #1a1a1a; --muted: #666; --card: #fff; --line: #ddd; --accent: #2563eb; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111; --fg: #eee; --muted: #999; --card: #1b1b1b; --line: #333; --accent: #60a5fa; }
+  }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 32px 16px; }
+  h1 { margin: 0 0 4px; font-size: 24px; }
+  p.sub { margin: 0 0 24px; color: var(--muted); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  button, label.btn { padding: 10px 16px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card); color: var(--fg); font: inherit; cursor: pointer; }
+  button.rec { border-color: #dc2626; color: #dc2626; }
+  input[type=file] { display: none; }
+  #out { min-height: 80px; padding: 16px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card); white-space: pre-wrap; }
+  #meta { color: var(--muted); font-size: 14px; margin-top: 8px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Oʻzbekcha nutqni matnga aylantirish</h1>
+  <p class="sub">Uzbek speech-to-text running on Kubernetes · model: NVIDIA FastConformer uz (CC-BY-4.0)</p>
+  <div class="row">
+    <label class="btn">Upload audio<input id="file" type="file" accept="audio/*"></label>
+    <button id="mic">🎙 Record</button>
+  </div>
+  <div id="out">Matn shu yerda chiqadi…</div>
+  <div id="meta"></div>
+  <p class="sub" style="margin-top:24px">API: <code>POST /transcribe</code> (form field <code>file</code>) → <code>GET /jobs/{id}</code></p>
+</main>
+<script>
+const out = document.getElementById('out'), meta = document.getElementById('meta');
+
+async function send(blob, name) {
+  out.textContent = 'Yuborilmoqda…'; meta.textContent = '';
+  const form = new FormData(); form.append('file', blob, name);
+  const res = await fetch('transcribe', { method: 'POST', body: form });
+  const job = await res.json();
+  if (!res.ok) { out.textContent = 'Xato: ' + job.detail; return; }
+  out.textContent = `Navbatda (#${job.position})…`;
+  while (true) {
+    await new Promise(r => setTimeout(r, 1000));
+    const j = await (await fetch('jobs/' + job.id)).json();
+    if (j.status === 'done') {
+      out.textContent = j.text || '(boʻsh)';
+      meta.textContent = `${j.audio_seconds}s audio → ${j.took_seconds}s · worker: ${j.worker}`;
+      return;
+    }
+    if (j.status === 'error') { out.textContent = 'Xato: ' + j.error; return; }
+    out.textContent = j.status === 'processing' ? 'Ishlanmoqda…' : 'Navbatda…';
+  }
+}
+
+document.getElementById('file').onchange = e => e.target.files[0] && send(e.target.files[0], e.target.files[0].name);
+
+let rec = null;
+document.getElementById('mic').onclick = async e => {
+  const btn = e.target;
+  if (rec) { rec.stop(); return; }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  const chunks = [];
+  rec = new MediaRecorder(stream);
+  rec.ondataavailable = ev => chunks.push(ev.data);
+  rec.onstop = () => {
+    stream.getTracks().forEach(t => t.stop());
+    btn.textContent = '🎙 Record'; btn.classList.remove('rec'); rec = null;
+    send(new Blob(chunks, { type: chunks[0]?.type }), 'mic.webm');
+  };
+  rec.start(); btn.textContent = '⏹ Stop'; btn.classList.add('rec');
+};
+</script>
+</body>
+</html>
