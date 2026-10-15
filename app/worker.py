@@ -4,6 +4,7 @@ import os
 import signal
 import socket
 import subprocess
+import tempfile
 import time
 
 import numpy as np
@@ -31,11 +32,17 @@ signal.signal(signal.SIGTERM, stop)
 
 
 def decode(audio: bytes) -> np.ndarray:
-    # ffmpeg turns any format (mp3, ogg, webm from the browser mic...) into 16 kHz mono float32
-    out = subprocess.run(
-        ["ffmpeg", "-loglevel", "error", "-i", "pipe:0", "-f", "f32le", "-ac", "1", "-ar", "16000", "pipe:1"],
-        input=audio, capture_output=True, check=True,
-    )
+    # ffmpeg turns any format (mp3, ogg, webm/mp4 from the browser mic...) into 16 kHz mono float32.
+    # A temp file, not a pipe: Safari's mp4 keeps its index at the END, so ffmpeg must jump around.
+    with tempfile.NamedTemporaryFile() as f:
+        f.write(audio)
+        f.flush()
+        out = subprocess.run(
+            ["ffmpeg", "-loglevel", "error", "-i", f.name, "-f", "f32le", "-ac", "1", "-ar", "16000", "pipe:1"],
+            capture_output=True,
+        )
+    if out.returncode != 0:
+        raise ValueError("cannot read this audio: " + out.stderr.decode()[-200:].strip())
     return np.frombuffer(out.stdout, dtype=np.float32)
 
 
