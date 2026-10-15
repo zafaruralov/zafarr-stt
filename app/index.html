@@ -58,6 +58,9 @@
   .step span { font-size: 13px; color: var(--ink-muted); }
   h2 { font-size: 20px; margin: 48px 0 0; }
   code { font: 13px/1.5 ui-monospace, Menlo, monospace; background: var(--paper); padding: 2px 6px; border-radius: 6px; }
+  .raw { margin-top: 12px; font-size: 14px; color: var(--ink-muted); }
+  .raw summary { cursor: pointer; }
+  .raw p { margin: 8px 0 0; }
   footer { max-width: 880px; margin: 0 auto; padding: 24px var(--gutter) 40px; font-size: 13px; color: var(--ink-muted); }
 
   @media (prefers-color-scheme: dark) {
@@ -120,6 +123,7 @@ function show(text, kind = "") { out.textContent = text; out.className = kind; }
 
 async function send(blob, name) {
   show("Yuborilmoqda…", "is-empty"); meta.textContent = "";
+  document.querySelector(".raw")?.remove();
   const form = new FormData(); form.append("file", blob, name);
   try {
     const res = await fetch("transcribe", { method: "POST", body: form });
@@ -129,6 +133,11 @@ async function send(blob, name) {
       const j = await (await fetch("jobs/" + job.id)).json();
       if (j.status === "done") {
         show(j.text || "(hech narsa eshitilmadi)", j.text ? "" : "is-empty");
+        if (j.cleaned === "yes" && j.raw !== j.text) {
+          const d = document.createElement("details"); d.className = "raw";
+          d.innerHTML = "<summary>Original transcript</summary><p></p>";
+          d.querySelector("p").textContent = j.raw; out.after(d);
+        }
         meta.innerHTML = `<span>${j.audio_seconds}s audio</span><span>${j.took_seconds}s processing</span><span>pod: ${j.worker}</span>`;
         return;
       }

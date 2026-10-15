@@ -6,6 +6,9 @@ import socket
 import subprocess
 import tempfile
 import time
+import json
+import urllib.request
+from datetime import date
 
 import numpy as np
 import onnx_asr
@@ -29,6 +32,42 @@ def stop(*_):
     global running
     running = False
 signal.signal(signal.SIGTERM, stop)
+
+
+# --- Text cleanup by an LLM (server side only: the browser never sees this call) ---
+LLM_KEY = os.getenv("OPENAI_API_KEY", "")            # from Secret llm-secret; empty = cleanup off
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+LLM_DAILY_LIMIT = int(os.getenv("LLM_DAILY_LIMIT", "200"))   # protects the paid credit
+PROMPT = (
+    "You fix Uzbek speech recognition output. The text may have misheard words, "
+    "joined or split words and missing punctuation. Rewrite it as the speaker most likely meant it: "
+    "correct words, spelling (Latin script, use oʻ and gʻ) and punctuation. Keep the language and "
+    "meaning, do not add new information, do not translate. Reply with the fixed text only."
+)
+
+
+def clean(text: str) -> str | None:
+    if not LLM_KEY or not text.strip():
+        return None
+    used = r.incr(f"llm:{date.today()}")             # shared counter for all workers
+    r.expire(f"llm:{date.today()}", 2 * 24 * 3600)
+    if used > LLM_DAILY_LIMIT:
+        return None                                    # limit reached: just give the raw text
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=json.dumps({
+            "model": LLM_MODEL,
+            "messages": [{"role": "system", "content": PROMPT}, {"role": "user", "content": text}],
+            "temperature": 0.2,
+        }).encode(),
+        headers={"Authorization": f"Bearer {LLM_KEY}", "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as res:
+            return json.load(res)["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        print(f"{name}: cleanup failed: {e}", flush=True)
+        return None                                    # never lose the job because of the LLM
 
 
 def decode(audio: bytes) -> np.ndarray:
@@ -61,7 +100,9 @@ while running:
         start = time.time()
         text = model.recognize(wave, sample_rate=16000)
         took = time.time() - start
-        r.hset(key, mapping={"status": "done", "text": text,
+        fixed = clean(text)
+        r.hset(key, mapping={"status": "done", "text": fixed or text, "raw": text,
+                             "cleaned": "yes" if fixed else "no",
                              "audio_seconds": f"{len(wave) / 16000:.1f}", "took_seconds": f"{took:.2f}"})
         print(f"{name}: {job_id} done, {len(wave) / 16000:.1f}s audio in {took:.2f}s", flush=True)
     except Exception as e:
