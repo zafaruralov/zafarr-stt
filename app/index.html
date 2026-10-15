@@ -92,15 +92,6 @@
     <div id="meta"></div>
   </section>
 
-  <h2>How it works</h2>
-  <div class="how">
-    <div class="step"><b>1 · API</b><span>FastAPI pod takes the file and returns a job id at once</span></div>
-    <div class="step"><b>2 · Queue</b><span>Redis keeps jobs in line, so 10 files at once is fine</span></div>
-    <div class="step"><b>3 · Workers</b><span>ONNX model on CPU; the autoscaler adds pods when busy</span></div>
-    <div class="step"><b>4 · Result</b><span>The page asks <code>/jobs/{id}</code> until the text is ready</span></div>
-  </div>
-  <p class="lead" style="margin-top:24px">API: <code>POST /transcribe</code> with form field <code>file</code> → <code>GET /jobs/{id}</code> ·
-    <a href="https://github.com/zafaruralov/zafarr-stt">source code</a></p>
 </main>
 
 <footer>Model: NVIDIA FastConformer uz (CC-BY-4.0), 10.9% WER on FLEURS. Runs on a home cluster, so it may sometimes be offline.</footer>
