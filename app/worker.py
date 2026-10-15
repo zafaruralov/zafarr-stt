@@ -36,7 +36,8 @@ signal.signal(signal.SIGTERM, stop)
 
 # --- Text cleanup by an LLM (server side only: the browser never sees this call) ---
 LLM_KEY = os.getenv("OPENAI_API_KEY", "")            # from Secret llm-secret; empty = cleanup off
-LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-5.5")
+LLM_REASONING = os.getenv("LLM_REASONING", "none")   # gpt-5: "none" = fast; more thinking = slower, rewrites more
 LLM_DAILY_LIMIT = int(os.getenv("LLM_DAILY_LIMIT", "200"))   # protects the paid credit
 PROMPT = (
     "You fix Uzbek speech recognition output. The text may have misheard words, "
@@ -58,7 +59,7 @@ def clean(text: str) -> str | None:
         data=json.dumps({
             "model": LLM_MODEL,
             "messages": [{"role": "system", "content": PROMPT}, {"role": "user", "content": text}],
-            "temperature": 0.2,
+            **({"reasoning_effort": LLM_REASONING} if LLM_MODEL.startswith(("gpt-5", "o")) else {"temperature": 0.2}),
         }).encode(),
         headers={"Authorization": f"Bearer {LLM_KEY}", "Content-Type": "application/json"},
     )
